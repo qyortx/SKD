@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Storage } from '../utils/storage.js';
 import { MathText } from '../utils/mathRenderer.jsx';
 import { processAndCompressImage } from '../utils/imageOptimizer.js';
+import PromptConfirmModal from './PromptConfirmModal.jsx';
 
 export default function AdminModal({
   isOpen,
@@ -9,11 +10,57 @@ export default function AdminModal({
   questions,
   onUpdateQuestions,
   examDuration,
-  onUpdateDuration
+  onUpdateDuration,
+  modalTitle
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [durationInput, setDurationInput] = useState(examDuration);
+
+  // Custom Prompt/Confirm Dialog State
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Lanjutkan',
+    cancelText: 'Batal',
+    showCancel: true,
+    confirmVariant: 'primary',
+    icon: 'warning',
+    onConfirm: null
+  });
+
+  const showAlert = ({ title, message, icon = 'info', confirmText = 'Mengerti', confirmVariant = 'primary' }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: title || 'Pemberitahuan Sistem',
+      message: message || '',
+      confirmText: confirmText || 'Mengerti',
+      cancelText: '',
+      showCancel: false,
+      confirmVariant: confirmVariant,
+      icon: icon,
+      onConfirm: null
+    });
+  };
+
+  const showConfirm = ({ title, message, confirmText, cancelText, confirmVariant, icon, onConfirm }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: title || 'Konfirmasi Tindakan',
+      message: message || '',
+      confirmText: confirmText || 'Lanjutkan',
+      cancelText: cancelText || 'Batal',
+      showCancel: true,
+      confirmVariant: confirmVariant || 'primary',
+      icon: icon || 'warning',
+      onConfirm: onConfirm || null
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+  };
 
   // Form Editor State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -98,11 +145,22 @@ export default function AdminModal({
   const handleSaveDuration = () => {
     const mins = parseInt(durationInput, 10);
     if (isNaN(mins) || mins <= 0 || mins > 300) {
-      alert('Harap masukkan durasi waktu antara 1 hingga 300 menit.');
+      showAlert({
+        title: 'Durasi Tidak Valid',
+        message: 'Harap masukkan durasi waktu antara 1 hingga 300 menit.',
+        icon: 'warning',
+        confirmVariant: 'warning'
+      });
       return;
     }
     onUpdateDuration(mins);
-    alert(`Durasi ujian berhasil disimpan: ${mins} menit.`);
+    showAlert({
+      title: 'Durasi Disimpan',
+      message: `Durasi ujian berhasil disimpan: ${mins} menit.`,
+      icon: 'success',
+      confirmVariant: 'success',
+      confirmText: 'Selesai'
+    });
   };
 
   // Helper label target
@@ -202,20 +260,37 @@ export default function AdminModal({
 
   // Delete Question
   const handleDeleteQuestion = (id) => {
-    if (confirm(`Apakah Anda yakin ingin menghapus Soal #${id}? Nomor soal berikutnya akan disesuaikan otomatis.`)) {
-      let updated = questions.filter(q => q.id !== id);
-      updated = updated.map((q, idx) => ({ ...q, id: idx + 1 }));
-      onUpdateQuestions(updated);
-    }
+    showConfirm({
+      title: 'Hapus Soal Ujian?',
+      message: `Apakah Anda yakin ingin menghapus Soal #${id}? Nomor urut soal berikutnya akan disesuaikan secara otomatis.`,
+      confirmText: 'Ya, Hapus Soal',
+      cancelText: 'Batal',
+      confirmVariant: 'danger',
+      icon: 'danger',
+      onConfirm: () => {
+        closeConfirm();
+        let updated = questions.filter(q => q.id !== id);
+        updated = updated.map((q, idx) => ({ ...q, id: idx + 1 }));
+        onUpdateQuestions(updated);
+      }
+    });
   };
 
   // Reset to Default
   const handleResetToDefault = () => {
-    if (confirm('PERINGATAN: Semua perubahan pada bank soal akan dikembalikan ke data awal (110 Soal Default Lengkap). Lanjutkan?')) {
-      const def = Storage.resetQuestionsToDefault();
-      onUpdateQuestions(def);
-      alert('Bank soal berhasil direset ke 110 soal standar SKD!');
-    }
+    showConfirm({
+      title: 'Reset ke Bank Soal BKN Default?',
+      message: 'PERINGATAN: Semua perubahan pada bank soal akan dikembalikan ke data awal (110 Soal Default Lengkap). Lanjutkan?',
+      confirmText: 'Ya, Reset ke Default',
+      cancelText: 'Batal',
+      confirmVariant: 'danger',
+      icon: 'warning',
+      onConfirm: () => {
+        closeConfirm();
+        const def = Storage.resetQuestionsToDefault();
+        onUpdateQuestions(def);
+      }
+    });
   };
 
   // Export JSON
@@ -235,16 +310,36 @@ export default function AdminModal({
         if (Array.isArray(parsed) && parsed.length > 0) {
           const valid = parsed.every(q => q.id && q.question && (q.options || q.optionImages));
           if (!valid) {
-            alert('Format JSON tidak valid! Setiap soal harus memiliki id, question, dan pilihan.');
+            showAlert({
+              title: 'Format Tidak Valid',
+              message: 'Format JSON tidak valid! Setiap butir soal harus memiliki id, question, dan pilihan jawaban.',
+              icon: 'danger',
+              confirmVariant: 'danger'
+            });
             return;
           }
           onUpdateQuestions(parsed);
-          alert(`Berhasil mengimpor ${parsed.length} soal dari file JSON!`);
+          showAlert({
+            title: 'Impor Berhasil',
+            message: `Berhasil mengimpor ${parsed.length} soal dari file JSON!`,
+            icon: 'success',
+            confirmVariant: 'success'
+          });
         } else {
-          alert('File JSON kosong atau bukan array soal.');
+          showAlert({
+            title: 'File Kosong',
+            message: 'File JSON kosong atau format data bukan daftar array soal yang valid.',
+            icon: 'warning',
+            confirmVariant: 'warning'
+          });
         }
       } catch (err) {
-        alert('Gagal mem-parsing file JSON: ' + err.message);
+        showAlert({
+          title: 'Gagal Membaca File',
+          message: 'Gagal mem-parsing file JSON: ' + err.message,
+          icon: 'danger',
+          confirmVariant: 'danger'
+        });
       }
     };
     reader.readAsText(file);
@@ -276,7 +371,12 @@ export default function AdminModal({
       applyImageToTarget(res.dataUrl, target);
       setImageSizeInfo(`${res.width}x${res.height} px (${res.sizeKb} KB)`);
     } catch (err) {
-      alert(err.message || 'Gagal mengunggah gambar');
+      showAlert({
+        title: 'Gagal Unggah Gambar',
+        message: err.message || 'Gagal mengunggah dan memproses gambar.',
+        icon: 'danger',
+        confirmVariant: 'danger'
+      });
     }
   };
 
@@ -321,7 +421,12 @@ export default function AdminModal({
         await navigator.clipboard.writeText(imgSrc);
         setToastMessage('Data gambar berhasil disalin ke clipboard!');
       } catch (e) {
-        alert('Gagal menyalin gambar ke clipboard: ' + err.message);
+        showAlert({
+          title: 'Gagal Salin Gambar',
+          message: 'Gagal menyalin gambar ke clipboard: ' + err.message,
+          icon: 'warning',
+          confirmVariant: 'warning'
+        });
       }
     }
   };
@@ -341,12 +446,27 @@ export default function AdminModal({
             }
           }
         }
-        alert('Tidak ditemukan data gambar di clipboard. Silakan salin gambar terlebih dahulu (bisa menggunakan tombol PrintScreen / Snipping Tool / Copy Image).');
+        showAlert({
+          title: 'Clipboard Kosong',
+          message: 'Tidak ditemukan data gambar di clipboard. Silakan salin gambar terlebih dahulu (bisa menggunakan tombol PrintScreen / Snipping Tool / Copy Image).',
+          icon: 'info',
+          confirmVariant: 'primary'
+        });
       } else {
-        alert('Browser Anda tidak mendukung direct clipboard read. Anda dapat menekan Ctrl+V langsung pada kolom input atau kotak dropzone.');
+        showAlert({
+          title: 'Dukungan Browser',
+          message: 'Browser Anda tidak mendukung direct clipboard read. Anda dapat menekan Ctrl+V langsung pada kolom input atau kotak dropzone.',
+          icon: 'info',
+          confirmVariant: 'primary'
+        });
       }
     } catch (err) {
-      alert('Izin clipboard tidak diberikan atau tidak tersedia. Anda dapat langsung menekan Ctrl+V.');
+      showAlert({
+        title: 'Izin Clipboard',
+        message: 'Izin clipboard tidak diberikan atau tidak tersedia. Anda dapat langsung menekan Ctrl+V.',
+        icon: 'info',
+        confirmVariant: 'primary'
+      });
     }
   };
 
@@ -462,7 +582,12 @@ export default function AdminModal({
 
     if (!formData.title.trim() || !formData.question.trim() ||
         !hasOptA || !hasOptB || !hasOptC || !hasOptD || !hasOptE) {
-      alert('Mohon lengkapi judul soal, teks pertanyaan, dan seluruh pilihan A hingga E (dapat berupa teks maupun gambar).');
+      showAlert({
+        title: 'Kelengkapan Soal',
+        message: 'Mohon lengkapi judul soal, teks pertanyaan, dan seluruh pilihan A hingga E (dapat berupa teks maupun gambar).',
+        icon: 'warning',
+        confirmVariant: 'warning'
+      });
       return;
     }
 
@@ -500,18 +625,26 @@ export default function AdminModal({
 
     onUpdateQuestions(updatedList);
     setIsFormOpen(false);
-    alert(editingId === null ? 'Soal baru berhasil ditambahkan!' : 'Perubahan soal berhasil disimpan!');
+    showAlert({
+      title: editingId === null ? 'Soal Ditambahkan' : 'Perubahan Disimpan',
+      message: editingId === null ? 'Butir soal baru berhasil ditambahkan ke bank soal!' : 'Perubahan butir soal berhasil disimpan ke bank soal!',
+      icon: 'success',
+      confirmVariant: 'success',
+      confirmText: 'Selesai'
+    });
   };
 
   const currentTargetImg = getActiveImageForTarget(imageTarget);
 
   return (
     <>
-      <div className="modal-backdrop is-open" role="dialog" aria-modal="true">
-        <div className="modal-card admin-modal-card">
-          <div className="modal-header">
-            <h3>Panel Administrasi Soal & Kunci Jawaban</h3>
-            <button className="icon-btn" onClick={onClose} aria-label="Tutup">
+      <div className="modal-backdrop is-open fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 overflow-y-auto" role="dialog" aria-modal="true">
+        <div className="modal-card admin-modal-card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-scale-up text-slate-900 dark:text-slate-100 font-sans">
+          <div className="modal-header flex items-center justify-between p-4 md:p-5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
+            <h3 className="text-lg md:text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {modalTitle || 'Panel Administrasi Soal & Kunci Jawaban'}
+            </h3>
+            <button className="icon-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-all active:scale-95" onClick={onClose} aria-label="Tutup">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -519,49 +652,51 @@ export default function AdminModal({
             </button>
           </div>
 
-          <div className="modal-body">
+          <div className="modal-body p-4 md:p-6 overflow-y-auto flex-1 flex flex-col gap-4">
             {/* Toast Notification */}
             {toastMessage && (
-              <div className="admin-toast-banner">
+              <div className="admin-toast-banner flex items-center gap-2 p-3 bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                 <span>{toastMessage}</span>
               </div>
             )}
 
             {/* Statistik Ringkas Bank Soal */}
-            <div className="admin-stats-summary">
-              <div className="admin-stat-card">
-                <div className="admin-stat-num">{countTotal}</div>
-                <div className="admin-stat-lbl">Total Soal Aktif</div>
+            <div className="admin-stats-summary grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="admin-stat-card p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
+                <div className="admin-stat-num text-xl md:text-2xl font-black text-slate-900 dark:text-white">{countTotal}</div>
+                <div className="admin-stat-lbl text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-tight">Total Soal Aktif</div>
               </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-num">{countTWK}</div>
-                <div className="admin-stat-lbl">Soal TWK (1 - 30)</div>
+              <div className="admin-stat-card p-3 rounded-xl bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 flex flex-col items-center justify-center text-center">
+                <div className="admin-stat-num text-xl md:text-2xl font-black text-red-600 dark:text-red-400">{countTWK}</div>
+                <div className="admin-stat-lbl text-[11px] font-semibold text-red-600/80 dark:text-red-400/80 uppercase tracking-tight">TWK (1 - 30)</div>
               </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-num">{countTIU}</div>
-                <div className="admin-stat-lbl">Soal TIU (31 - 65)</div>
+              <div className="admin-stat-card p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 flex flex-col items-center justify-center text-center">
+                <div className="admin-stat-num text-xl md:text-2xl font-black text-blue-600 dark:text-blue-400">{countTIU}</div>
+                <div className="admin-stat-lbl text-[11px] font-semibold text-blue-600/80 dark:text-blue-400/80 uppercase tracking-tight">TIU (31 - 65)</div>
               </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-num">{countTKP}</div>
-                <div className="admin-stat-lbl">Soal TKP (66 - 110)</div>
+              <div className="admin-stat-card p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 flex flex-col items-center justify-center text-center">
+                <div className="admin-stat-num text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-400">{countTKP}</div>
+                <div className="admin-stat-lbl text-[11px] font-semibold text-emerald-600/80 dark:text-emerald-400/80 uppercase tracking-tight">TKP (66 - 110)</div>
               </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-num">{countWithImage}</div>
-                <div className="admin-stat-lbl">Soal & Opsi Bergambar</div>
+              <div className="admin-stat-card p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 flex flex-col items-center justify-center text-center">
+                <div className="admin-stat-num text-xl md:text-2xl font-black text-purple-600 dark:text-purple-400">{countWithImage}</div>
+                <div className="admin-stat-lbl text-[11px] font-semibold text-purple-600/80 dark:text-purple-400/80 uppercase tracking-tight">Soal Bergambar</div>
               </div>
             </div>
 
             {/* Toolbar Pencarian & Aksi */}
-            <div className="admin-toolbar-row">
-              <div className="admin-search-box">
+            <div className="admin-toolbar-row flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="admin-search-box flex items-center gap-2 flex-1 max-w-md">
                 <input
                   type="text"
+                  className="w-full px-3.5 py-2 text-xs md:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400 outline-none"
                   placeholder="Cari judul soal atau kata kunci..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
                 <select
+                  className="px-3 py-2 text-xs md:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white outline-none"
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
                 >
@@ -573,21 +708,21 @@ export default function AdminModal({
                 </select>
               </div>
 
-              <div className="admin-action-buttons">
-                <button className="btn btn-primary" onClick={handleOpenAddForm}>
+              <div className="admin-action-buttons flex items-center gap-2 flex-wrap">
+                <button className="btn btn-primary inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all active:scale-95" onClick={handleOpenAddForm}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                   <span>Tambah Soal</span>
                 </button>
-                <button className="btn btn-secondary" onClick={handleExportJSON} title="Unduh JSON bank soal">
+                <button className="btn btn-secondary inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all active:scale-95" onClick={handleExportJSON} title="Unduh JSON bank soal">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                   </svg>
                   <span>Ekspor JSON</span>
                 </button>
-                <label className="btn btn-secondary" style={{ cursor: 'pointer' }} title="Unggah file JSON">
+                <label className="btn btn-secondary inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-all active:scale-95" title="Unggah file JSON">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                   </svg>
@@ -599,27 +734,26 @@ export default function AdminModal({
                     onChange={handleFileImport}
                   />
                 </label>
-                <button className="btn btn-secondary" onClick={handleResetToDefault} title="Kembalikan ke 110 soal standar">
+                <button className="btn btn-secondary inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all active:scale-95" onClick={handleResetToDefault} title="Kembalikan ke 110 soal standar">
                   Reset Default
                 </button>
               </div>
             </div>
 
             {/* Pengaturan Durasi Ujian */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-subtle)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-              <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>Atur Durasi Ujian:</span>
+            <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Atur Durasi Ujian:</span>
               <input
                 type="number"
                 min="10"
                 max="300"
                 value={durationInput}
                 onChange={(e) => setDurationInput(e.target.value)}
-                style={{ width: '80px', padding: '0.35rem 0.5rem', textAlign: 'center', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)' }}
+                className="w-20 px-2 py-1 text-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold"
               />
-              <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>menit</span>
+              <span className="text-slate-500">menit</span>
               <button
-                className="btn btn-sm btn-secondary"
-                style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
+                className="btn btn-sm btn-secondary px-3 py-1 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 rounded-lg font-semibold active:scale-95"
                 onClick={handleSaveDuration}
               >
                 Simpan Durasi
@@ -627,22 +761,22 @@ export default function AdminModal({
             </div>
 
             {/* Tabel Daftar Soal */}
-            <div className="admin-table-container">
-              <table className="admin-table">
-                <thead>
+            <div className="admin-table-container overflow-x-auto w-full rounded-xl border border-slate-200 dark:border-slate-800 max-h-[50vh] overflow-y-auto">
+              <table className="admin-table w-full text-left text-xs md:text-sm border-collapse">
+                <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 font-bold text-slate-600 dark:text-slate-300">
                   <tr>
-                    <th style={{ width: '55px' }} className="text-center">No</th>
-                    <th style={{ width: '75px' }}>Kategori</th>
-                    <th style={{ width: '220px' }}>Judul Soal</th>
-                    <th>Cuplikan Pertanyaan</th>
-                    <th style={{ width: '160px' }}>Kunci & Bobot</th>
-                    <th style={{ width: '90px' }} className="text-center">Aksi</th>
+                    <th className="px-3 py-2.5 text-center w-14">No</th>
+                    <th className="px-3 py-2.5 w-24">Kategori</th>
+                    <th className="px-3 py-2.5 w-52">Judul Soal</th>
+                    <th className="px-3 py-2.5">Cuplikan Pertanyaan</th>
+                    <th className="px-3 py-2.5 w-40">Kunci & Bobot</th>
+                    <th className="px-3 py-2.5 text-center w-24">Aksi</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {filteredQuestions.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="text-center py-4 text-muted">
+                      <td colSpan="6" className="text-center py-8 text-slate-400">
                         Tidak ada soal yang sesuai dengan pencarian atau filter.
                       </td>
                     </tr>
@@ -652,49 +786,51 @@ export default function AdminModal({
                       const hasMainImg = Boolean(q.image);
                       const hasOptImg = Boolean(q.optionImages && Object.values(q.optionImages).some(Boolean));
                       return (
-                        <tr key={q.id}>
-                          <td className="text-center fw-bold">#{q.id}</td>
-                          <td>
-                            <span className={`category-badge-sm badge-${(q.category || 'twk').toLowerCase()}`}>
+                        <tr key={q.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-3 py-2.5 text-center font-bold text-slate-500">#{q.id}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`category-badge-sm px-2 py-0.5 rounded-full text-[10px] font-bold uppercase mr-1 ${
+                              (q.category || 'TWK') === 'TWK'
+                                ? 'badge-twk bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400'
+                                : (q.category || 'TWK') === 'TIU'
+                                ? 'badge-tiu bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400'
+                                : 'badge-tkp bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                            }`}>
                               {q.category || 'TWK'}
                             </span>
                             {hasMainImg && (
-                              <span className="badge-img-pill" title="Memiliki lampiran gambar pada soal utama">
-                                🖼️
-                              </span>
+                              <span className="badge-img-pill text-xs ml-0.5" title="Memiliki lampiran gambar pada soal utama">🖼️</span>
                             )}
                             {hasOptImg && (
-                              <span className="badge-img-pill" title="Memiliki gambar pada opsi pilihan jawaban">
-                                🎨
-                              </span>
+                              <span className="badge-img-pill text-xs ml-0.5" title="Memiliki gambar pada opsi pilihan jawaban">🎨</span>
                             )}
                           </td>
-                          <td>
-                            <div className="fw-semibold text-truncate-1">
+                          <td className="px-3 py-2.5">
+                            <div className="font-semibold text-slate-900 dark:text-white line-clamp-1">
                               <MathText text={q.title || 'Tanpa Judul'} />
                             </div>
-                            <small className="text-muted text-truncate-1">{q.topic || ''}</small>
+                            <small className="text-slate-400 line-clamp-1">{q.topic || ''}</small>
                           </td>
-                          <td>
-                            <div className="text-truncate-2 question-preview-cell">
+                          <td className="px-3 py-2.5">
+                            <div className="line-clamp-2 text-slate-600 dark:text-slate-300 text-xs">
                               <MathText text={q.question} />
                             </div>
                           </td>
-                          <td>
+                          <td className="px-3 py-2.5">
                             {isSingle ? (
-                              <span className="badge-pill bg-success-soft">
+                              <span className="badge-pill bg-success-soft px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                                 Kunci: <strong>{q.correctAnswer || 'A'}</strong> (+5)
                               </span>
                             ) : (
-                              <span className="badge-pill bg-warning-soft">
-                                Skala: A:{q.points?.A || 0}, B:{q.points?.B || 0}, C:{q.points?.C || 0}, D:{q.points?.D || 0}, E:{q.points?.E || 0}
+                              <span className="badge-pill bg-warning-soft px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                Skala TKP
                               </span>
                             )}
                           </td>
-                          <td className="text-center">
-                            <div className="btn-group-sm">
+                          <td className="px-3 py-2.5 text-center">
+                            <div className="btn-group-sm inline-flex items-center gap-1">
                               <button
-                                className="btn btn-sm btn-icon btn-outline-primary"
+                                className="btn btn-sm btn-icon btn-outline-primary p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-all active:scale-95"
                                 title="Edit Soal"
                                 onClick={() => handleOpenEditForm(q)}
                               >
@@ -703,7 +839,7 @@ export default function AdminModal({
                                 </svg>
                               </button>
                               <button
-                                className="btn btn-sm btn-icon btn-outline-danger"
+                                className="btn btn-sm btn-icon btn-outline-danger p-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition-all active:scale-95"
                                 title="Hapus Soal"
                                 onClick={() => handleDeleteQuestion(q.id)}
                               >
@@ -727,16 +863,18 @@ export default function AdminModal({
 
       {/* MODAL EDITOR FORM */}
       {isFormOpen && (
-        <div className="modal-backdrop is-open" style={{ zIndex: 1100 }}>
-          <div className="modal-card form-editor-card">
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <h3>{editingId === null ? 'Tambah Soal Baru' : `Edit Soal #${formData.id}: ${formData.title}`}</h3>
+        <div className="modal-backdrop is-open fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="modal-card form-editor-card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-scale-up text-slate-900 dark:text-slate-100 font-sans">
+            <div className="modal-header flex items-center justify-between p-4 md:p-5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="text-base md:text-lg font-bold text-slate-900 dark:text-white">
+                  {editingId === null ? 'Tambah Soal Baru' : `Edit Soal #${formData.id}: ${formData.title}`}
+                </h3>
                 {/* Tab switcher: Editor vs Preview */}
-                <div className="form-tab-switcher">
+                <div className="form-tab-switcher flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                   <button
                     type="button"
-                    className={`form-tab-btn ${activeFormTab === 'editor' ? 'is-active' : ''}`}
+                    className={`form-tab-btn flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-all ${activeFormTab === 'editor' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
                     onClick={() => setActiveFormTab('editor')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -744,7 +882,7 @@ export default function AdminModal({
                   </button>
                   <button
                     type="button"
-                    className={`form-tab-btn ${activeFormTab === 'preview' ? 'is-active' : ''}`}
+                    className={`form-tab-btn flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-all ${activeFormTab === 'preview' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
                     onClick={() => setActiveFormTab('preview')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -752,7 +890,7 @@ export default function AdminModal({
                   </button>
                 </div>
               </div>
-              <button className="icon-btn" onClick={() => setIsFormOpen(false)} aria-label="Tutup Form">
+              <button className="icon-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-all active:scale-95" onClick={() => setIsFormOpen(false)} aria-label="Tutup Form">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -760,83 +898,87 @@ export default function AdminModal({
               </button>
             </div>
 
-            <form onSubmit={handleSaveForm}>
-              <div className="modal-body" style={{ maxHeight: 'calc(85vh - 120px)', overflowY: 'auto' }}>
+            <form onSubmit={handleSaveForm} className="flex-1 flex flex-col overflow-hidden">
+              <div className="modal-body p-4 md:p-6 overflow-y-auto flex-1 flex flex-col gap-4">
                 {/* Toast Notification */}
                 {toastMessage && (
-                  <div className="admin-toast-banner" style={{ marginBottom: '1rem' }}>
+                  <div className="admin-toast-banner flex items-center gap-2 p-3 bg-emerald-600 text-white rounded-xl text-xs font-semibold">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                     <span>{toastMessage}</span>
                   </div>
                 )}
 
                 {activeFormTab === 'preview' ? (
-                  /* ================= TAB PRATINJAU LANGSUNG ================= */
-                  <div className="admin-live-preview-box">
-                    <div className="preview-note">
+                  /* TAB PRATINJAU LANGSUNG */
+                  <div className="admin-live-preview-box flex flex-col gap-4">
+                    <div className="preview-note p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-xl text-xs text-blue-800 dark:text-blue-300 flex items-center gap-2">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                      Berikut tampilan simulasi bagaimana soal, rumus matematika, dan gambar (soal & opsi) akan tampil bagi peserta ujian:
+                      Berikut tampilan simulasi bagaimana soal, rumus matematika, dan gambar akan tampil bagi peserta ujian:
                     </div>
 
-                    <div className="preview-card-frame">
-                      <div className="preview-card-header">
-                        <span className={`category-badge-sm badge-${(formData.category || 'twk').toLowerCase()}`}>
+                    <div className="preview-card-frame p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col gap-4">
+                      <div className="preview-card-header flex items-center gap-2 flex-wrap pb-3 border-b border-slate-100 dark:border-slate-800">
+                        <span className={`category-badge-sm px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
+                          formData.category === 'TWK' ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400' : formData.category === 'TIU' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                        }`}>
                           {formData.category}
                         </span>
-                        <span className="topic-tag">{formData.topic || 'Kompetensi Dasar'}</span>
-                        <div style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                        <span className="topic-tag text-xs font-medium text-slate-500">{formData.topic || 'Kompetensi Dasar'}</span>
+                        <div className="ml-auto text-xs text-slate-400 font-semibold">
                           {formData.scoringType === 'single' ? 'Benar +5 / Salah 0' : 'Skala 1 - 5 Poin'}
                         </div>
                       </div>
 
-                      <h3 className="preview-question-title">
+                      <h3 className="preview-question-title text-base font-bold text-slate-900 dark:text-white">
                         <MathText text={formData.title || '(Belum ada judul soal)'} />
                       </h3>
 
                       {/* Gambar Soal Utama */}
                       {formData.image && (
-                        <div className="question-image-box" style={{ margin: '1rem 0' }}>
-                          <div className="question-image-wrapper">
-                            <img src={formData.image} alt={formData.imageCaption || 'Gambar Soal'} className="question-img" />
-                          </div>
+                        <div className="question-image-box flex flex-col items-center gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <img src={formData.image} alt={formData.imageCaption || 'Gambar Soal'} className="max-h-72 object-contain rounded-lg" />
                           {formData.imageCaption && (
-                            <div className="question-img-caption">
-                              <span>{formData.imageCaption}</span>
-                            </div>
+                            <span className="text-xs text-slate-500 italic">{formData.imageCaption}</span>
                           )}
                         </div>
                       )}
 
-                      <div className="preview-question-body">
+                      <div className="preview-question-body text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
                         <MathText text={formData.question || '(Belum ada teks pertanyaan)'} />
                       </div>
 
-                      <div className="preview-options-list">
+                      <div className="preview-options-list flex flex-col gap-2 mt-2">
                         {['A', 'B', 'C', 'D', 'E'].map(opt => {
                           const optImg = formData.optionImages && formData.optionImages[opt];
                           const optText = formData.options[opt];
+                          const isCorrectKey = formData.scoringType === 'single' && formData.correctAnswer === opt;
                           return (
-                            <div key={opt} className={`preview-option-item ${formData.scoringType === 'single' && formData.correctAnswer === opt ? 'is-correct-key' : ''}`}>
-                              <div className="preview-option-key">{opt}</div>
-                              <div className="preview-option-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
+                            <div
+                              key={opt}
+                              className={`preview-option-item flex items-start gap-3 p-3.5 rounded-xl border transition-all ${
+                                isCorrectKey
+                                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
+                                  : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40'
+                              }`}
+                            >
+                              <div className="preview-option-key w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 font-bold flex items-center justify-center text-xs text-slate-800 dark:text-slate-200 flex-shrink-0">
+                                {opt}
+                              </div>
+                              <div className="preview-option-content flex-1 flex flex-col gap-1.5 text-xs text-slate-800 dark:text-slate-200">
                                 {optImg && (
-                                  <div className="preview-opt-img-box">
-                                    <img src={optImg} alt={`Gambar Opsi ${opt}`} className="preview-opt-img" />
-                                  </div>
+                                  <img src={optImg} alt={`Gambar Opsi ${opt}`} className="max-h-32 object-contain rounded-lg" />
                                 )}
                                 {optText && (
-                                  <div className="preview-option-text">
-                                    <MathText text={optText} />
-                                  </div>
+                                  <MathText text={optText} />
                                 )}
                               </div>
                               {formData.scoringType === 'scale' && (
-                                <span className="badge-pill bg-warning-soft">
+                                <span className="badge-pill px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                                   {formData.points[opt] || 1} Poin
                                 </span>
                               )}
-                              {formData.scoringType === 'single' && formData.correctAnswer === opt && (
-                                <span className="badge-pill bg-success-soft">
+                              {isCorrectKey && (
+                                <span className="badge-pill px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                                   Kunci Benar (5 Poin)
                                 </span>
                               )}
@@ -846,24 +988,22 @@ export default function AdminModal({
                       </div>
 
                       {formData.explanation && (
-                        <div className="preview-explanation-box">
-                          <strong>Pembahasan:</strong>
-                          <div style={{ marginTop: '0.35rem' }}>
-                            <MathText text={formData.explanation} />
-                          </div>
+                        <div className="preview-explanation-box p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-xs">
+                          <strong className="text-slate-900 dark:text-white font-bold block mb-1">Pembahasan:</strong>
+                          <MathText text={formData.explanation} />
                         </div>
                       )}
                     </div>
                   </div>
                 ) : (
-                  /* ================= TAB FORMULIR EDITOR ================= */
+                  /* TAB FORMULIR EDITOR */
                   <>
                     {/* Kategori & Subtopik */}
-                    <div className="form-grid-2">
-                      <div className="form-group">
-                        <label>Kategori Soal</label>
+                    <div className="form-grid-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="form-group flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori Soal</label>
                         <select
-                          className="form-control"
+                          className="form-control w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white outline-none"
                           value={formData.category}
                           onChange={(e) => {
                             const cat = e.target.value;
@@ -879,11 +1019,11 @@ export default function AdminModal({
                           <option value="TKP">TKP (Tes Karakteristik Pribadi)</option>
                         </select>
                       </div>
-                      <div className="form-group">
-                        <label>Subtopik / Indikator</label>
+                      <div className="form-group flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Subtopik / Indikator</label>
                         <input
                           type="text"
-                          className="form-control"
+                          className="form-control w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400 outline-none"
                           placeholder="Contoh: Kemampuan Figural / Aritmetika / Silogisme"
                           value={formData.topic}
                           onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
@@ -892,12 +1032,14 @@ export default function AdminModal({
                     </div>
 
                     {/* Judul Soal */}
-                    <div className="form-group">
-                      <label>Judul Soal <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <div className="form-group flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Judul Soal <span className="text-red-500">*</span>
+                      </label>
                       <input
                         ref={fieldRefs.title}
                         type="text"
-                        className="form-control"
+                        className="form-control w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400 outline-none"
                         placeholder="Contoh: Perhitungan Kecepatan Berpapasan Dua Kendaraan"
                         value={formData.title}
                         onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -906,21 +1048,21 @@ export default function AdminModal({
                       />
                     </div>
 
-                    {/* ================= FITUR UPLOAD & COPY/PASTE GAMBAR (PERSIS SEPERTI EQUATION MATH) ================= */}
-                    <div className="form-section-card">
-                      <div className="form-section-header">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {/* FITUR UPLOAD & COPY/PASTE GAMBAR */}
+                    <div className="form-section-card p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 flex flex-col gap-3">
+                      <div className="form-section-header flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <polyline points="21 15 16 10 5 21" />
                           </svg>
-                          <strong>Fitur Upload, Tempel (Paste), & Salin Gambar</strong>
+                          <span>Fitur Upload, Tempel (Paste), & Salin Gambar</span>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div className="flex gap-1.5">
                           <button
                             type="button"
-                            className="btn btn-xs btn-primary"
+                            className="btn btn-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold active:scale-95"
                             onClick={() => handlePasteImageFromClipboard(imageTarget)}
                             title="Tempel gambar langsung dari clipboard (Ctrl+V)"
                           >
@@ -930,7 +1072,7 @@ export default function AdminModal({
                             <>
                               <button
                                 type="button"
-                                className="btn btn-xs btn-secondary"
+                                className="btn btn-xs px-2.5 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold active:scale-95"
                                 onClick={() => handleCopyImageToClipboard(currentTargetImg.src)}
                                 title="Salin gambar ini ke clipboard"
                               >
@@ -938,7 +1080,7 @@ export default function AdminModal({
                               </button>
                               <button
                                 type="button"
-                                className="btn btn-xs btn-outline-danger"
+                                className="btn btn-xs px-2.5 py-1 bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 rounded-lg text-xs font-semibold active:scale-95"
                                 onClick={() => handleRemoveImageFromTarget(imageTarget)}
                                 title="Hapus gambar pada target ini"
                               >
@@ -949,10 +1091,10 @@ export default function AdminModal({
                         </div>
                       </div>
 
-                      {/* Selector Target Gambar (Sama seperti fitur Equation Math) */}
-                      <div className="math-target-bar">
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Pasang / Edit Gambar pada:</span>
-                        <div className="target-pill-group">
+                      {/* Selector Target Gambar */}
+                      <div className="math-target-bar flex items-center gap-2 flex-wrap text-xs">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Pasang / Edit Gambar pada:</span>
+                        <div className="target-pill-group flex flex-wrap gap-1.5">
                           {[
                             { id: 'question', label: '📌 Soal Utama', hasImg: Boolean(formData.image) },
                             { id: 'optA', label: '🅰️ Opsi A', hasImg: Boolean(formData.optionImages?.A) },
@@ -964,7 +1106,11 @@ export default function AdminModal({
                             <button
                               key={t.id}
                               type="button"
-                              className={`target-pill-btn ${imageTarget === t.id ? 'is-active' : ''}`}
+                              className={`target-pill-btn px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all active:scale-95 ${
+                                imageTarget === t.id
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                              }`}
                               onClick={() => {
                                 setImageTarget(t.id);
                                 if (t.id === 'question') setMathTarget('question');
@@ -972,7 +1118,7 @@ export default function AdminModal({
                               }}
                             >
                               <span>{t.label}</span>
-                              {t.hasImg && <span className="target-dot-badge" title="Target ini memiliki gambar" />}
+                              {t.hasImg && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 ml-1.5" title="Target ini memiliki gambar" />}
                             </button>
                           ))}
                         </div>
@@ -981,29 +1127,33 @@ export default function AdminModal({
                       {/* Dropzone & Kontrol Gambar untuk Target Aktif */}
                       {!currentTargetImg.src ? (
                         <div>
-                          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.65rem' }}>
+                          <div className="flex gap-2 mb-2">
                             <button
                               type="button"
-                              className={`btn btn-xs ${imageInputMode === 'file' ? 'btn-primary' : 'btn-secondary'}`}
+                              className={`btn btn-xs px-2.5 py-1 text-xs font-semibold rounded-lg ${imageInputMode === 'file' ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}
                               onClick={() => setImageInputMode('file')}
                             >
                               Unggah File
                             </button>
                             <button
                               type="button"
-                              className={`btn btn-xs ${imageInputMode === 'url' ? 'btn-primary' : 'btn-secondary'}`}
+                              className={`btn btn-xs px-2.5 py-1 text-xs font-semibold rounded-lg ${imageInputMode === 'url' ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}
                               onClick={() => setImageInputMode('url')}
                             >
                               Link URL Gambar
                             </button>
-                            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: 'auto', alignSelf: 'center' }}>
+                            <span className="text-[11px] text-slate-400 ml-auto self-center">
                               💡 Tip: Bisa langsung tekan <strong>Ctrl + V</strong> untuk menempel screenshot!
                             </span>
                           </div>
 
                           {imageInputMode === 'file' ? (
                             <div
-                              className={`img-upload-dropzone ${isDraggingImage ? 'is-dragover' : ''}`}
+                              className={`img-upload-dropzone border-2 border-dashed rounded-xl p-5 text-center flex flex-col items-center justify-center cursor-pointer transition-all ${
+                                isDraggingImage
+                                  ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                                  : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-400'
+                              }`}
                               onDragOver={(e) => { e.preventDefault(); setIsDraggingImage(true); }}
                               onDragLeave={() => setIsDraggingImage(false)}
                               onDrop={(e) => {
@@ -1027,26 +1177,28 @@ export default function AdminModal({
                                   }
                                 }}
                               />
-                              <label htmlFor={`admin-file-upload-${imageTarget}`} className="dropzone-label">
-                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <label htmlFor={`admin-file-upload-${imageTarget}`} className="dropzone-label cursor-pointer flex flex-col items-center gap-1.5">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-slate-400">
                                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                                 </svg>
-                                <span className="dropzone-title">Klik atau seret file gambar untuk <strong>{getTargetLabel(imageTarget)}</strong></span>
-                                <span className="dropzone-sub">Atau klik di sini lalu tekan <strong>Ctrl + V</strong> untuk menempelkan gambar dari clipboard</span>
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                  Klik atau seret file gambar untuk <strong>{getTargetLabel(imageTarget)}</strong>
+                                </span>
+                                <span className="text-[11px] text-slate-400">Atau klik di sini lalu tekan <strong>Ctrl + V</strong> untuk menempelkan gambar</span>
                               </label>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <div className="flex gap-2">
                               <input
                                 type="url"
-                                className="form-control"
+                                className="form-control flex-1 px-3 py-2 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl outline-none"
                                 placeholder={`https://example.com/gambar-${imageTarget}.png`}
                                 value={urlInputVal}
                                 onChange={(e) => setUrlInputVal(e.target.value)}
                               />
                               <button
                                 type="button"
-                                className="btn btn-secondary"
+                                className="btn btn-secondary px-3 py-2 bg-slate-200 dark:bg-slate-700 text-xs font-semibold rounded-xl"
                                 onClick={() => handleApplyImageUrl(imageTarget)}
                               >
                                 Pasang ke {getTargetLabel(imageTarget)}
@@ -1055,18 +1207,20 @@ export default function AdminModal({
                           )}
                         </div>
                       ) : (
-                        <div className="uploaded-image-preview-card">
-                          <div className="preview-thumb-box" onClick={() => setPreviewZoomImg(currentTargetImg.src)}>
-                            <img src={currentTargetImg.src} alt={`Gambar ${getTargetLabel(imageTarget)}`} className="preview-thumb-img" />
+                        <div className="uploaded-image-preview-card flex items-center gap-3 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                          <div className="preview-thumb-box cursor-pointer flex-shrink-0" onClick={() => setPreviewZoomImg(currentTargetImg.src)}>
+                            <img src={currentTargetImg.src} alt={`Gambar ${getTargetLabel(imageTarget)}`} className="w-16 h-16 object-cover rounded-lg border border-slate-300 dark:border-slate-700" />
                           </div>
-                          <div className="preview-info-box">
-                            <div className="preview-info-header">
-                              <span className="badge-pill bg-success-soft">Gambar Terpasang pada {getTargetLabel(imageTarget)}</span>
-                              {imageSizeInfo && <span className="text-muted" style={{ fontSize: '0.8rem' }}>{imageSizeInfo}</span>}
-                              <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.35rem' }}>
+                          <div className="preview-info-box flex-1 min-w-0 flex flex-col gap-1">
+                            <div className="preview-info-header flex items-center justify-between gap-2 flex-wrap">
+                              <span className="badge-pill px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                Gambar Terpasang pada {getTargetLabel(imageTarget)}
+                              </span>
+                              {imageSizeInfo && <span className="text-slate-400 text-xs">{imageSizeInfo}</span>}
+                              <div className="flex gap-1.5 ml-auto">
                                 <button
                                   type="button"
-                                  className="btn btn-xs btn-secondary"
+                                  className="btn btn-xs px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs rounded-lg active:scale-95"
                                   onClick={() => handleCopyImageToClipboard(currentTargetImg.src)}
                                   title="Salin gambar ini"
                                 >
@@ -1074,7 +1228,7 @@ export default function AdminModal({
                                 </button>
                                 <button
                                   type="button"
-                                  className="btn btn-xs btn-outline-danger"
+                                  className="btn btn-xs px-2.5 py-1 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 text-xs rounded-lg active:scale-95"
                                   onClick={() => handleRemoveImageFromTarget(imageTarget)}
                                   title="Hapus gambar ini"
                                 >
@@ -1083,12 +1237,11 @@ export default function AdminModal({
                               </div>
                             </div>
                             {imageTarget === 'question' && (
-                              <div className="form-group" style={{ margin: '0.5rem 0 0' }}>
-                                <label style={{ fontSize: '0.8rem' }}>Keterangan / Caption Gambar Soal (Opsional):</label>
+                              <div className="form-group mt-1">
                                 <input
                                   type="text"
-                                  className="form-control"
-                                  placeholder="Contoh: Gambar 1. Pola Rotasi Figural TIU"
+                                  className="form-control w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
+                                  placeholder="Keterangan / Caption Gambar Soal (Opsional)"
                                   value={formData.imageCaption}
                                   onChange={(e) => setFormData({ ...formData, imageCaption: e.target.value })}
                                 />
@@ -1099,18 +1252,18 @@ export default function AdminModal({
                       )}
                     </div>
 
-                    {/* ================= TOOLBAR EQUATION MATH (LATEX) ================= */}
-                    <div className="form-section-card math-toolbar-section">
-                      <div className="form-section-header">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '1.2rem', fontFamily: 'serif', fontWeight: 'bold' }}>∑x</span>
-                          <strong>Bantuan Formula & Simbol Matematika (Equation Math)</strong>
+                    {/* TOOLBAR EQUATION MATH (LATEX) */}
+                    <div className="form-section-card math-toolbar-section p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 flex flex-col gap-3">
+                      <div className="form-section-header flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                          <span className="text-base font-serif font-black">∑x</span>
+                          <span>Bantuan Formula & Simbol Matematika (KaTeX)</span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Format:</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Format:</span>
                           <button
                             type="button"
-                            className={`btn btn-xs ${mathMode === 'inline' ? 'btn-primary' : 'btn-secondary'}`}
+                            className={`btn btn-xs px-2.5 py-1 text-xs font-semibold rounded-lg ${mathMode === 'inline' ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}
                             onClick={() => setMathMode('inline')}
                             title="Format sebaris dengan teks: $...$"
                           >
@@ -1118,7 +1271,7 @@ export default function AdminModal({
                           </button>
                           <button
                             type="button"
-                            className={`btn btn-xs ${mathMode === 'block' ? 'btn-primary' : 'btn-secondary'}`}
+                            className={`btn btn-xs px-2.5 py-1 text-xs font-semibold rounded-lg ${mathMode === 'block' ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}
                             onClick={() => setMathMode('block')}
                             title="Format blok terpusat: $$...$$"
                           >
@@ -1128,11 +1281,10 @@ export default function AdminModal({
                       </div>
 
                       {/* Pemilih target pengetikan */}
-                      <div className="math-target-bar">
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Sisipkan Rumus ke:</span>
+                      <div className="math-target-bar flex items-center gap-2 flex-wrap text-xs">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Sisipkan Rumus ke:</span>
                         <select
-                          className="form-control"
-                          style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.82rem' }}
+                          className="form-control px-2.5 py-1 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                           value={mathTarget}
                           onChange={(e) => {
                             setMathTarget(e.target.value);
@@ -1149,18 +1301,18 @@ export default function AdminModal({
                           <option value="explanation">Pembahasan</option>
                           <option value="title">Judul Soal</option>
                         </select>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+                        <span className="text-[11px] text-slate-400 ml-auto">
                           Klik tombol di bawah untuk menyisipkan rumus
                         </span>
                       </div>
 
                       {/* Tombol Simbol KaTeX */}
-                      <div className="math-buttons-grid">
+                      <div className="math-buttons-grid grid grid-cols-4 sm:grid-cols-7 md:grid-cols-10 gap-1.5">
                         {MATH_PRESETS.map((m, idx) => (
                           <button
                             key={idx}
                             type="button"
-                            className="math-insert-btn"
+                            className="math-insert-btn p-1.5 text-xs font-mono font-bold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/40 hover:text-blue-600 border border-slate-200 dark:border-slate-700 rounded-lg text-center transition-all active:scale-95"
                             title={m.title}
                             onClick={() => handleInsertFormula(m.code)}
                           >
@@ -1170,13 +1322,13 @@ export default function AdminModal({
                       </div>
 
                       {/* Template Cepat Soal TIU */}
-                      <div className="tiu-template-row">
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Template TIU:</span>
+                      <div className="tiu-template-row flex items-center gap-1.5 flex-wrap text-xs">
+                        <span className="text-slate-500 font-medium">Template TIU:</span>
                         {TIU_TEMPLATES.map((tmpl, idx) => (
                           <button
                             key={idx}
                             type="button"
-                            className="btn btn-xs btn-outline-secondary"
+                            className="btn btn-xs px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] hover:border-blue-500 active:scale-95"
                             onClick={() => handleInsertFormula(tmpl.code)}
                           >
                             + {tmpl.label}
@@ -1186,18 +1338,20 @@ export default function AdminModal({
                     </div>
 
                     {/* Teks Pertanyaan */}
-                    <div className="form-group">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                        <label style={{ margin: 0 }}>Teks Pertanyaan / Soal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          Bisa paste gambar (Ctrl+V) langsung ke sini atau gunakan rumus <code>$...$</code>
+                    <div className="form-group flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Teks Pertanyaan / Soal <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-slate-400">
+                          Bisa paste gambar (Ctrl+V) atau rumus <code>$...$</code>
                         </span>
                       </div>
                       <textarea
                         ref={fieldRefs.question}
-                        className="form-control"
+                        className="form-control w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400 outline-none"
                         rows="4"
-                        placeholder="Tuliskan butir soal secara lengkap. Anda dapat menekan Ctrl+V untuk menempel gambar soal langsung ke sini..."
+                        placeholder="Tuliskan butir soal secara lengkap. Anda dapat menekan Ctrl+V untuk menempel gambar soal..."
                         value={formData.question}
                         onChange={(e) => setFormData({ ...formData, question: e.target.value })}
                         onFocus={() => {
@@ -1209,27 +1363,29 @@ export default function AdminModal({
                       />
                     </div>
 
-                    {/* Opsi A - E (Dengan Dukungan Gambar dan Math per Opsi) */}
-                    <div className="form-group">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                        <label style={{ margin: 0 }}>Pilihan Jawaban (A sampai E) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          Masing-masing opsi dapat memiliki <strong>Teks</strong> dan/atau <strong>Gambar</strong>
+                    {/* Opsi A - E */}
+                    <div className="form-group flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Pilihan Jawaban (A sampai E) <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-slate-400">
+                          Setiap opsi dapat memuat teks atau gambar
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div className="flex flex-col gap-2.5">
                         {['A', 'B', 'C', 'D', 'E'].map(opt => {
                           const optKey = `opt${opt}`;
                           const optImg = formData.optionImages && formData.optionImages[opt];
                           return (
-                            <div key={opt} className="option-row-editor-card">
-                              <span className="option-row-label">{opt}.</span>
-                              <div className="option-row-input-wrap">
+                            <div key={opt} className="option-row-editor-card flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
+                              <span className="option-row-label w-6 font-bold text-center text-sm text-slate-800 dark:text-slate-200">{opt}.</span>
+                              <div className="option-row-input-wrap flex-1 flex items-center gap-2">
                                 <input
                                   ref={fieldRefs[optKey]}
                                   type="text"
-                                  className="form-control"
+                                  className="form-control flex-1 px-3 py-2 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                                   placeholder={`Pilihan ${opt}... (dapat memuat teks atau rumus $...$)`}
                                   value={formData.options[opt] || ''}
                                   onChange={(e) => setFormData({
@@ -1243,27 +1399,26 @@ export default function AdminModal({
                                   onPaste={(e) => handleInputPaste(e, optKey)}
                                 />
 
-                                {/* Aksi Gambar Opsi */}
                                 {optImg ? (
-                                  <div className="opt-img-thumb-preview">
+                                  <div className="opt-img-thumb-preview flex items-center gap-1.5 flex-shrink-0">
                                     <img
                                       src={optImg}
                                       alt={`Gambar Opsi ${opt}`}
-                                      className="opt-thumb-img"
+                                      className="opt-thumb-img w-9 h-9 object-cover rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer"
                                       onClick={() => setPreviewZoomImg(optImg)}
                                       title="Klik untuk memperbesar gambar"
                                     />
                                     <button
                                       type="button"
-                                      className="opt-img-action-btn"
-                                      title="Salin gambar opsi ini ke clipboard"
+                                      className="p-1 rounded bg-slate-200 dark:bg-slate-700 text-xs active:scale-95"
+                                      title="Salin gambar opsi ini"
                                       onClick={() => handleCopyImageToClipboard(optImg)}
                                     >
                                       📋
                                     </button>
                                     <button
                                       type="button"
-                                      className="opt-img-action-btn text-danger"
+                                      className="p-1 rounded bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400 text-xs active:scale-95"
                                       title="Hapus gambar opsi ini"
                                       onClick={() => handleRemoveImageFromTarget(optKey)}
                                     >
@@ -1271,9 +1426,9 @@ export default function AdminModal({
                                     </button>
                                   </div>
                                 ) : (
-                                  <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                                  <div className="flex gap-1 flex-shrink-0">
                                     <label
-                                      className="btn btn-xs btn-outline-secondary opt-img-upload-btn"
+                                      className="px-2 py-1 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
                                       title={`Unggah gambar untuk opsi ${opt}`}
                                     >
                                       🖼️ Gambar
@@ -1290,7 +1445,7 @@ export default function AdminModal({
                                     </label>
                                     <button
                                       type="button"
-                                      className="btn btn-xs btn-outline-secondary"
+                                      className="px-2 py-1 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"
                                       onClick={() => handlePasteImageFromClipboard(optKey)}
                                       title={`Tempel gambar dari clipboard ke Opsi ${opt}`}
                                     >
@@ -1306,42 +1461,47 @@ export default function AdminModal({
                     </div>
 
                     {/* Mode Penilaian */}
-                    <div className="form-group">
-                      <label>Sistem Penilaian & Kunci Jawaban <span style={{ color: 'var(--danger)' }}>*</span></label>
-                      <div className="scoring-type-selector">
-                        <label className="radio-inline">
+                    <div className="form-group flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Sistem Penilaian & Kunci Jawaban <span className="text-red-500">*</span>
+                      </label>
+                      <div className="scoring-type-selector flex flex-col sm:flex-row gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                        <label className="radio-inline flex items-center gap-2 cursor-pointer font-medium">
                           <input
                             type="radio"
                             name="form-scoring-type"
+                            className="text-blue-600 focus:ring-blue-500"
                             value="single"
                             checked={formData.scoringType === 'single'}
                             onChange={() => setFormData({ ...formData, scoringType: 'single' })}
                           />
-                          <span>Benar 5 Poin / Salah 0 (Standar Soal 1-65 / TWK & TIU)</span>
+                          <span>Benar 5 Poin / Salah 0 (Standar TWK & TIU)</span>
                         </label>
-                        <label className="radio-inline">
+                        <label className="radio-inline flex items-center gap-2 cursor-pointer font-medium">
                           <input
                             type="radio"
                             name="form-scoring-type"
+                            className="text-blue-600 focus:ring-blue-500"
                             value="scale"
                             checked={formData.scoringType === 'scale'}
                             onChange={() => setFormData({ ...formData, scoringType: 'scale' })}
                           />
-                          <span>Skala 1 - 5 Poin Tiap Opsi (Standar Soal 66-110 / TKP)</span>
+                          <span>Skala 1 - 5 Poin Tiap Opsi (Standar TKP)</span>
                         </label>
                       </div>
                     </div>
 
                     {/* Single key selection */}
                     {formData.scoringType === 'single' ? (
-                      <div className="form-group">
-                        <label>Pilih Kunci Jawaban yang Benar (Bernilai 5 Poin):</label>
-                        <div style={{ display: 'flex', gap: '1.5rem', padding: '0.5rem 0' }}>
+                      <div className="form-group flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Pilih Kunci Jawaban yang Benar (5 Poin):</label>
+                        <div className="flex gap-4 p-2">
                           {['A', 'B', 'C', 'D', 'E'].map(k => (
-                            <label key={k} className="radio-inline">
+                            <label key={k} className="radio-inline flex items-center gap-1.5 cursor-pointer text-xs font-bold">
                               <input
                                 type="radio"
                                 name="correct-key"
+                                className="text-blue-600 focus:ring-blue-500"
                                 value={k}
                                 checked={formData.correctAnswer === k}
                                 onChange={() => setFormData({ ...formData, correctAnswer: k })}
@@ -1352,15 +1512,15 @@ export default function AdminModal({
                         </div>
                       </div>
                     ) : (
-                      <div className="form-group">
-                        <label>Tentukan Nilai Poin (1 sampai 5) untuk Masing-Masing Pilihan Opsi:</label>
-                        <div className="scale-points-row">
+                      <div className="form-group flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Tentukan Nilai Poin (1 - 5) untuk Masing-Masing Pilihan:</label>
+                        <div className="scale-points-row grid grid-cols-5 gap-2">
                           {['A', 'B', 'C', 'D', 'E'].map(k => (
-                            <div key={k} className="point-input-box">
-                              <span>Opsi {k}</span>
+                            <div key={k} className="point-input-box flex flex-col items-center gap-1 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                              <span className="font-bold">Opsi {k}</span>
                               <input
                                 type="number"
-                                className="form-control"
+                                className="form-control w-14 text-center px-1 py-1 text-xs border rounded bg-white dark:bg-slate-900 font-bold"
                                 min="1"
                                 max="5"
                                 value={formData.points[k] || 1}
@@ -1376,11 +1536,11 @@ export default function AdminModal({
                     )}
 
                     {/* Pembahasan */}
-                    <div className="form-group">
-                      <label>Pembahasan & Penjelasan Kunci Jawaban</label>
+                    <div className="form-group flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Pembahasan & Penjelasan Kunci Jawaban</label>
                       <textarea
                         ref={fieldRefs.explanation}
-                        className="form-control"
+                        className="form-control w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white placeholder-slate-400 outline-none"
                         rows="3"
                         placeholder="Tuliskan pembahasan atau langkah penyelesaian (dapat menyertakan rumus KaTeX $...$)..."
                         value={formData.explanation}
@@ -1392,11 +1552,11 @@ export default function AdminModal({
                 )}
               </div>
 
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsFormOpen(false)}>
+              <div className="modal-footer flex items-center justify-end gap-3 p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                <button type="button" className="btn btn-secondary px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl" onClick={() => setIsFormOpen(false)}>
                   Batal
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm active:scale-95">
                   {editingId === null ? 'Tambahkan Soal' : 'Simpan Perubahan'}
                 </button>
               </div>
@@ -1408,23 +1568,22 @@ export default function AdminModal({
       {/* Modal Lightbox Preview Zoom untuk Admin */}
       {previewZoomImg && (
         <div
-          className="modal-backdrop is-open img-zoom-backdrop"
+          className="modal-backdrop is-open img-zoom-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
           onClick={() => setPreviewZoomImg(null)}
-          style={{ zIndex: 1300 }}
         >
-          <div className="img-zoom-container" onClick={(e) => e.stopPropagation()}>
-            <div className="img-zoom-header">
-              <span>Pratinjau Gambar Penuh</span>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div className="img-zoom-container bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full p-4 flex flex-col gap-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="img-zoom-header flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+              <span className="text-sm font-bold text-slate-900 dark:text-white">Pratinjau Gambar Penuh</span>
+              <div className="flex gap-2 items-center">
                 <button
                   type="button"
-                  className="btn btn-xs btn-secondary"
+                  className="btn btn-xs px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs rounded-lg active:scale-95"
                   onClick={() => handleCopyImageToClipboard(previewZoomImg)}
                 >
                   📋 Salin Gambar
                 </button>
                 <button
-                  className="icon-btn"
+                  className="icon-btn w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                   onClick={() => setPreviewZoomImg(null)}
                   aria-label="Tutup"
                 >
@@ -1432,12 +1591,29 @@ export default function AdminModal({
                 </button>
               </div>
             </div>
-            <div className="img-zoom-body">
-              <img src={previewZoomImg} alt="Zoom Preview" className="img-zoom-full" />
+            <div className="img-zoom-body flex items-center justify-center p-2 max-h-[75vh] overflow-auto">
+              <img src={previewZoomImg} alt="Zoom Preview" className="max-h-[70vh] object-contain rounded-lg" />
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal Konfirmasi Dialog / Custom Confirm Modal */}
+      <PromptConfirmModal
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        showCancel={confirmDialog.showCancel !== false}
+        confirmVariant={confirmDialog.confirmVariant}
+        icon={confirmDialog.icon}
+        onConfirm={() => {
+          if (confirmDialog.onConfirm) confirmDialog.onConfirm();
+          closeConfirm();
+        }}
+        onCancel={closeConfirm}
+      />
     </>
   );
 }
